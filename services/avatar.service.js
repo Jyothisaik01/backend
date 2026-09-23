@@ -251,8 +251,8 @@ exports.getDressCatalog = async (req, res) => {
     });
   }
 
-  // Load comprehensive catalog items so all shirts, pants, shoes, dresses, and accessories are available!
-  const items = await Product.find(filter).sort({ clothingType: 1, createdAt: -1 }).limit(500).lean();
+  // Load comprehensive catalog items with Anywear VTO enabled items prioritized at top
+  const items = await Product.find(filter).sort({ 'virtualTryOn.enabled': -1, clothingType: 1, createdAt: -1 }).limit(500).lean();
   res.json(items);
 };
 
@@ -408,7 +408,7 @@ exports.getBitmojiWardrobe = (req, res) => {
       price: 1499,
       brand: 'Subway Studio',
       rating: 4.8,
-      image: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=700&auto=format&fit=crop&q=80',
+      image: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80',
       isAvatarItem: true
     },
     {

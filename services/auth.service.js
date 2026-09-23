@@ -61,7 +61,8 @@ exports.login = async ({ email, password }) => {
       id: user._id,
       name: user.name,
       email: user.email,
-      type: 'vendor'
+      type: 'vendor',
+      vendorSettings: { theme: (user.vendorSettings && user.vendorSettings.theme) || 'light' }
     }
   };
 };
@@ -337,7 +338,10 @@ exports.updateVendorSettings = async (userId, payload) => {
   const user = await User.findOne({ _id: userId, isDeleted: { $ne: true } });
   if (!user) throw new Error('Vendor account not found');
 
-  const { otp, ...settings } = payload || {};
+  const incoming = (payload && payload.settings && typeof payload.settings === 'object')
+    ? { ...payload, ...payload.settings }
+    : (payload || {});
+  const { otp, settings: _nestedSettings, ...settings } = incoming;
 
   // Check if 2FA is active
   const is2FAEnabled = user.vendorSettings?.twoFactorAuth === true;

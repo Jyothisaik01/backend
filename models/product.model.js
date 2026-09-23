@@ -27,6 +27,15 @@ const productSchema = new mongoose.Schema(
     avatarTemplateId: { type: String, default: '', index: true },
     avatarColor: { type: String, default: '' },
     avatarTexture: { type: String, default: '' },
+    virtualTryOn: {
+      enabled: { type: Boolean, default: false },
+      garmentType: { type: String, enum: ['top', 'bottom', 'dress', 'footwear', 'shoes', 'accessory', 'outerwear', 'bag', ''], default: '' },
+      tryOnImage: { type: String, default: '' },
+      tryOnSupported: { type: Boolean, default: true },
+      decartAssetId: { type: String, default: '' }
+    },
+    occasions: { type: [String], default: [], index: true },
+    confidenceInsights: { type: mongoose.Schema.Types.Mixed, default: null },
     specifications: { type: mongoose.Schema.Types.Mixed, default: {} },
     priceHistory: {
       type: [

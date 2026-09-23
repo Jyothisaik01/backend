@@ -49,7 +49,11 @@ function formatProduct(p) {
     sizes: Array.isArray(p.sizes) ? p.sizes : [],
     warranty: p.warranty || '1 Year Manufacturer Warranty',
     returnPolicy: p.returnPolicy || '7 Days Return & Exchange',
-    vendorName: p.userId?.name || 'Authorized Partner'
+    vendorName: p.userId?.name || 'Authorized Partner',
+    gender: p.gender || 'Unisex',
+    clothingType: p.clothingType || '',
+    avatarCompatible: Boolean(p.avatarCompatible),
+    virtualTryOn: p.virtualTryOn || null
   };
 }
 

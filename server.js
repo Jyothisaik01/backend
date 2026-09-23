@@ -19,14 +19,16 @@ const { startReturnStatusScheduler } = require('./services/return-status.service
 const { startEmailCronScheduler } = require('./services/email-cron.service');
 const { startSubscriptionScheduler } = require('./services/subscription-scheduler.service');
 const { seedWarehousesIfEmpty } = require('./services/location.service');
+const { ensureShoppingProfilesAndOccasions } = require('./services/auto-sync.service');
 
-// Start schedulers once MongoDB connection is open
+// Start schedulers and database sync once MongoDB connection is open
 if (mongoose.connection.readyState === 1) {
   startOrderStatusScheduler();
   startReturnStatusScheduler();
   startEmailCronScheduler();
   startSubscriptionScheduler();
   seedWarehousesIfEmpty();
+  ensureShoppingProfilesAndOccasions();
 } else {
   mongoose.connection.once('open', () => {
     startOrderStatusScheduler();
@@ -34,6 +36,7 @@ if (mongoose.connection.readyState === 1) {
     startEmailCronScheduler();
     startSubscriptionScheduler();
     seedWarehousesIfEmpty();
+    ensureShoppingProfilesAndOccasions();
   });
 }
 

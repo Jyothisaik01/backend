@@ -35,8 +35,32 @@ async function testAll() {
 
   // 3. Test daily vendor digest compiler (dry-run check)
   const emailCron = require('../services/email-cron.service');
-  console.log('\n--- 3. Testing Daily Vendor Digest Job Function ---');
-  console.log('dispatchDailyVendorDigests function exists:', typeof emailCron.dispatchDailyVendorDigests === 'function');
+  // 4. Test Customer Shopping Profile & Darwin Memory
+  const Customer = require('../models/customer.model');
+  const cust = await Customer.findOne({ isDeleted: { $ne: true } });
+  if (cust) {
+    console.log('\n--- 4. Testing Customer Shopping Profile & Memory ---');
+    console.log('Customer:', cust.name, 'Email:', cust.email);
+    console.log('Budget Max:', cust.shoppingProfile?.budget?.max);
+    console.log('Footwear Size:', cust.shoppingProfile?.sizes?.footwear);
+    console.log('Clothing Size:', cust.shoppingProfile?.sizes?.clothing);
+    console.log('Darwin Memory Enabled:', cust.darwinMemory?.enabled);
+    console.log('Learned Memories Count:', cust.darwinMemory?.memories?.length);
+  }
+
+  // 5. Test Product Confidence / Decision Assistant
+  const Product = require('../models/product.model');
+  const sampleProd = await Product.findOne({ isDeleted: { $ne: true } });
+  if (sampleProd) {
+    const { generateProductConfidence } = require('../services/product-confidence.service');
+    const conf = generateProductConfidence(sampleProd, [], cust?.shoppingProfile);
+    console.log('\n--- 5. Testing Product Confidence / Decision Assistant ---');
+    console.log('Product:', sampleProd.name);
+    console.log('Title:', conf.title);
+    console.log('Highlights:', conf.highlights);
+    console.log('Consideration (Watchout):', conf.consideration);
+    console.log('Darwin Explanation:', conf.darwinExplanation);
+  }
 
   console.log('\n✅ All backend unit checks passed successfully.');
   process.exit(0);

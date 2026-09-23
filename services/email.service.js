@@ -7,6 +7,10 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const SENDER_EMAIL = process.env.SENDER_EMAIL || 'noreply.2k2x@gmail.com';
 const SENDER_NAME = process.env.SENDER_NAME || 'Inventory App';
 
+// Production URLs for emails (pointing to live deployed domains by default, overridable via env)
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://inventory24.vercel.app').replace(/\/$/, '');
+const ADMIN_URL = (process.env.ADMIN_URL || 'https://inventoryadmin24.vercel.app').replace(/\/$/, '');
+
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
@@ -218,6 +222,11 @@ async function sendOrderPlacedCustomerEmail({ order, customer, items = [] }) {
               </p>
             </div>
           ` : ''}
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/customer/orders" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
+              Track Order &amp; View Details →
+            </a>
+          </div>
         </div>
 
         <!-- Footer -->
@@ -288,7 +297,7 @@ async function sendOrderPlacedVendorEmail({ order, vendor, vendorItems = [] }) {
             <strong style="color: #15803d; font-size: 16px;">${formatINR(vendorTotal)}</strong>
           </div>
           <div style="margin-top: 18px; text-align: center;">
-            <a href="http://localhost:5173/vendor/orders" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 10px 22px; border-radius: 8px;">View in Vendor Portal</a>
+            <a href="${FRONTEND_URL}/vendor/orders" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 10px 22px; border-radius: 8px;">View in Vendor Portal</a>
           </div>
         </div>
       </div>
@@ -336,7 +345,7 @@ async function sendOrderStatusUpdateEmail({ order, customer, status }) {
         </div>
         <div style="padding: 24px; text-align: center;">
           <p style="font-size: 15px; color: #334155; line-height: 1.5; margin: 0 0 20px;">${meta.desc}</p>
-          <a href="http://localhost:5173/customer/orders" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 10px 24px; border-radius: 8px;">View Live Tracking</a>
+          <a href="${FRONTEND_URL}/customer/orders" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 10px 24px; border-radius: 8px;">View Live Tracking</a>
         </div>
       </div>
     </body>
@@ -406,7 +415,7 @@ async function sendReturnRequestedCustomerEmail({ order, customer, returnRecord 
           </div>
 
           <div style="text-align: center;">
-            <a href="http://localhost:5173/customer/orders" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 26px; border-radius: 8px;">
+            <a href="${FRONTEND_URL}/customer/orders" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 26px; border-radius: 8px;">
               Track Return Status
             </a>
           </div>
@@ -476,7 +485,7 @@ async function sendReturnRefundCreditedEmail({ order, customer, refundAmount = 0
           </div>
 
           <div style="text-align: center;">
-            <a href="http://localhost:5173/customer/settings" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 26px; border-radius: 8px;">
+            <a href="${FRONTEND_URL}/customer/settings" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 26px; border-radius: 8px;">
               View Wallet Balance
             </a>
           </div>
@@ -635,7 +644,7 @@ async function sendMonthlyVendorPayoutEmail({ vendor, transactions = [], month =
           </table>
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="http://localhost:5173/vendor/payments" style="display: inline-block; background: #059669; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 24px; border-radius: 8px;">View Full Ledger & Invoices</a>
+            <a href="${FRONTEND_URL}/vendor/payments" style="display: inline-block; background: #059669; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 11px 24px; border-radius: 8px;">View Full Ledger & Invoices</a>
           </div>
         </div>
 
@@ -725,7 +734,7 @@ async function sendMonthlyAdminRevenueEmail({ admin, metrics = {}, month = '' })
           </table>
 
           <div style="text-align: center; margin-top: 28px;">
-            <a href="http://localhost:5174" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">Open Admin Executive Portal</a>
+            <a href="${ADMIN_URL}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">Open Admin Executive Portal</a>
           </div>
         </div>
 
@@ -806,7 +815,7 @@ async function sendMonthlyCustomerStatementEmail({ customer, orders = [], totalS
           `}
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="http://localhost:5173" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 24px; border-radius: 8px;">Explore Trending Deals</a>
+            <a href="${FRONTEND_URL}" style="display: inline-block; background: #0284c7; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 24px; border-radius: 8px;">Explore Trending Deals</a>
           </div>
         </div>
 
@@ -893,7 +902,7 @@ async function sendSixMonthReviewEmail({ recipient, userType = 'customer', metri
           </div>
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="${userType === 'admin' ? 'http://localhost:5174' : 'http://localhost:5173'}" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
+            <a href="${userType === 'admin' ? ADMIN_URL : (userType === 'vendor' ? `${FRONTEND_URL}/vendor` : FRONTEND_URL)}" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
               ${userType === 'admin' ? 'Open Intelligence Center' : 'View Account Dashboard'}
             </a>
           </div>
@@ -978,7 +987,7 @@ async function sendAnnualReviewEmail({ recipient, userType = 'customer', metrics
           </div>
 
           <div style="text-align: center;">
-            <a href="${userType === 'admin' ? 'http://localhost:5174' : 'http://localhost:5173'}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
+            <a href="${userType === 'admin' ? ADMIN_URL : (userType === 'vendor' ? `${FRONTEND_URL}/vendor` : FRONTEND_URL)}" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
               ${userType === 'admin' ? 'Open Executive Portal' : 'View Full Annual Statement'}
             </a>
           </div>
@@ -1123,7 +1132,7 @@ async function sendDailyVendorDigestEmail({ vendor, orders = [], transactions = 
 
           <!-- Portal CTA -->
           <div style="text-align: center; margin-top: 24px;">
-            <a href="http://localhost:5173/vendor" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
+            <a href="${FRONTEND_URL}/vendor" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 28px; border-radius: 8px;">
               Open Vendor Dashboard
             </a>
           </div>
@@ -1217,6 +1226,12 @@ async function sendTicketResolvedCustomerEmail({ ticket, customerEmail, customer
           <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 16px;">
             If you need further assistance or if your issue has not been fully resolved, you can re-open this ticket or reply directly from your Support Center inside the app.
           </p>
+
+          <div style="text-align: center; margin: 24px 0 16px;">
+            <a href="${FRONTEND_URL}/customer" style="display: inline-block; background: #16a34a; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">
+              Open Customer Support Center &rarr;
+            </a>
+          </div>
         </div>
 
         <!-- Footer -->

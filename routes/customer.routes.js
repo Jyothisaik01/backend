@@ -49,6 +49,29 @@ router.post('/wallet/top-up', customerAuth, async (req, res) => {
   try { await service.topUpWallet(req, res); } catch (err) { res.status(400).json({ msg: err.message || 'Failed to top up wallet' }); }
 });
 
+// Shopping Profile & Preferences
+router.get('/shopping-profile', customerAuth, async (req, res) => {
+  try { await service.getShoppingProfile(req, res); } catch (err) { res.status(500).json({ msg: err.message || 'Failed to load shopping profile' }); }
+});
+router.put('/shopping-profile', customerAuth, async (req, res) => {
+  try { await service.updateShoppingProfile(req, res); } catch (err) { res.status(400).json({ msg: err.message || 'Failed to update shopping profile' }); }
+});
+
+// Darwin Shopping Memory
+router.get('/darwin-memory', customerAuth, async (req, res) => {
+  try { await service.getDarwinMemory(req, res); } catch (err) { res.status(500).json({ msg: err.message || 'Failed to load Darwin memory' }); }
+});
+router.post('/darwin-memory/toggle', customerAuth, async (req, res) => {
+  try { await service.toggleDarwinMemory(req, res); } catch (err) { res.status(400).json({ msg: err.message || 'Failed to toggle Darwin memory' }); }
+});
+router.delete('/darwin-memory/:key', customerAuth, async (req, res) => {
+  try { await service.deleteDarwinMemory(req, res); } catch (err) { res.status(500).json({ msg: err.message || 'Failed to delete memory' }); }
+});
+router.delete('/darwin-memory', customerAuth, async (req, res) => {
+  try { await service.clearDarwinMemory(req, res); } catch (err) { res.status(500).json({ msg: err.message || 'Failed to clear Darwin memory' }); }
+});
+
+
 const StoreSettings = require('../models/store-settings.model');
 router.get('/store-settings', async (req, res) => {
   try {

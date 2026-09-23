@@ -4,8 +4,9 @@ const { getApiKey } = require('../config/gemini.config');
 
 /**
  * AI-Powered Visual Product Search Service
- * Uses Google Gemini Vision AI to analyze uploaded photos, extracting real category context,
- * keywords, and visual attributes to query real products from the MongoDB database.
+ * Uses Google Gemini Vision AI (gemini-3.5-flash-lite / gemini-3.6-flash) to analyze uploaded photos,
+ * extracting text concepts, item nature, and dominant color palette.
+ * Matches products using a dual-pillar formula: 60-70% Concept & Theme + 30-40% Color Palette.
  */
 
 // Analyze image with Google Gemini Vision AI
@@ -13,226 +14,355 @@ async function analyzeImageWithAI(imageDataUrl, rawTag = '') {
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-2.5-flash or fallback
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.6-flash'];
+  const genAI = new GoogleGenerativeAI(apiKey);
 
-    const parts = [];
+  const parts = [];
 
-    // If image is a base64 Data URL, extract inlineData
-    if (imageDataUrl && typeof imageDataUrl === 'string' && imageDataUrl.startsWith('data:')) {
-      const match = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-      if (match) {
-        parts.push({
-          inlineData: {
-            mimeType: match[1],
-            data: match[2]
-          }
-        });
-      }
+  // Extract base64 inlineData if Data URL
+  if (imageDataUrl && typeof imageDataUrl === 'string' && imageDataUrl.startsWith('data:')) {
+    const match = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (match) {
+      parts.push({
+        inlineData: {
+          mimeType: match[1],
+          data: match[2]
+        }
+      });
     }
+  }
 
-    const promptText = `You are an expert e-commerce visual search AI for an online marketplace.
-Analyze this product image carefully.
+  const promptText = `You are an expert e-commerce visual search AI for an online marketplace.
+Analyze this user-uploaded product or image carefully.
 Contextual filename or tag provided: "${rawTag || ''}".
 
 Determine:
-1. What exact physical product is shown? (e.g. "White Clogs / Slip-On Shoes", "White Sneakers", "Wireless Headphones", "Casual Oxford Shirt", "Leather Backpack", etc.)
-2. What primary category in our store does this belong to?
-Allowed categories: 'Footwear & Shoes', 'Fashion & Apparel', 'Audio', 'Electronics', 'Wearables', 'Bags & Luggage', 'Furniture & Decor', 'Groceries'.
-3. Extract 4 to 6 relevant search keywords for finding this in a database (e.g. ["white", "shoes", "clogs", "sneakers", "casual"]).
-4. 4 filter tags starting with "All" (e.g. ["All", "Shoes", "White", "Casual", "Men"]).
+1. What exact physical product, motif, character, or graphic is shown? (e.g. "Panda Mascot Graphic / Print", "White Leather Sneaker", "Denim Jacket", "Smartwatch")
+2. Is it a physical apparel/footwear product, or a graphic/character/mascot/logo?
+3. What is the primary concept / subject? (e.g. "panda", "sneaker", "jacket", "headphones")
+4. What are the dominant colors? (e.g. ["black", "white"], ["navy", "white"], ["red"])
+5. Dominant color description: (e.g. "Monochrome Black & White", "Classic Navy & White", "Bold Crimson Red")
+6. Suggested catalog categories in our store: choose from ['Fashion', 'Fashion & Apparel', 'Footwear & Shoes', 'Bags & Luggage', 'Wearables', 'Audio', 'Electronics', 'Stationery & Office', 'Sports & Fitness']
+7. Concept keywords (4-6 tokens describing the motif, type, or style): (e.g. ["panda", "cartoon", "animal", "graphic", "mascot", "print"])
+8. Color keywords (2-4 tokens for matching color palette): (e.g. ["black", "white", "monochrome", "charcoal"])
+9. 5 filter tags starting with "All" (e.g. ["All", "Panda", "Shoes", "Graphic", "Black & White"])
 
 Return ONLY a valid JSON object without any markdown code formatting:
 {
-  "detectedItem": "Concise product title",
-  "category": "One of the allowed categories",
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "tags": ["All", "Tag1", "Tag2", "Tag3"]
+  "detectedItem": "Panda Mascot Graphic / Print",
+  "itemType": "graphic_or_character",
+  "primaryConcept": "panda",
+  "dominantColors": ["black", "white"],
+  "colorDescription": "Monochrome Black & White",
+  "category": "Fashion",
+  "suggestedCategories": ["Fashion", "Fashion & Apparel", "Footwear & Shoes", "Bags & Luggage", "Stationery & Office"],
+  "conceptKeywords": ["panda", "cartoon", "animal", "graphic", "mascot", "print"],
+  "colorKeywords": ["black", "white", "monochrome", "charcoal"],
+  "keywords": ["panda", "graphic", "print", "cartoon", "black", "white"],
+  "tags": ["All", "Panda", "Shoes", "Graphic", "Black & White"]
 }`;
 
-    parts.push(promptText);
+  parts.push(promptText);
 
-    const result = await model.generateContent(parts);
-    const text = result.response.text().trim();
-    const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    return parsed;
-  } catch (err) {
-    console.warn('[VisualSearch/AI] Gemini vision analysis error:', err.message);
-    return null;
+  for (const modelName of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(parts);
+      const text = result.response.text().trim();
+      const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (parsed && (parsed.detectedItem || parsed.primaryConcept)) {
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[VisualSearch/AI] ${modelName} analysis warning:`, err.message?.slice(0, 120));
+    }
   }
+
+  return null;
 }
 
 // Fallback heuristic extraction from filename and cues
 function extractHeuristicContext(rawTag = '') {
   const clean = String(rawTag || '').toLowerCase().replace(/[-_]/g, ' ');
 
-  if (/shoe|sneaker|clog|croc|boot|heel|footwear|loafer|sandal|white.*model|model.*white/.test(clean)) {
+  // Animal / Mascot / Cartoon heuristic
+  if (/panda|cat|dog|bear|animal|mascot|cartoon|anime|character|foodpanda/.test(clean)) {
+    const isPanda = /panda/.test(clean);
     return {
-      detectedItem: clean.includes('white') ? 'White Casual Shoes / Clogs' : 'Running & Casual Shoes',
+      detectedItem: isPanda ? 'Panda Mascot Graphic / Print' : 'Character & Mascot Graphic',
+      itemType: 'graphic_or_character',
+      primaryConcept: isPanda ? 'panda' : 'character',
+      dominantColors: ['black', 'white'],
+      colorDescription: 'Monochrome Black & White',
+      category: 'Fashion',
+      suggestedCategories: ['Fashion', 'Fashion & Apparel', 'Footwear & Shoes', 'Bags & Luggage', 'Stationery & Office'],
+      conceptKeywords: isPanda
+        ? ['panda', 'cartoon', 'animal', 'graphic', 'mascot', 'print']
+        : ['character', 'cartoon', 'graphic', 'mascot', 'print'],
+      colorKeywords: ['black', 'white', 'monochrome', 'charcoal'],
+      keywords: isPanda
+        ? ['panda', 'graphic', 'print', 'cartoon', 'black', 'white']
+        : ['character', 'graphic', 'print', 'black', 'white'],
+      tags: isPanda
+        ? ['All', 'Panda', 'Shoes', 'Graphic', 'Black & White']
+        : ['All', 'Graphic', 'Apparel', 'Black & White', 'Casual']
+    };
+  }
+
+  if (/shoe|sneaker|clog|croc|boot|heel|footwear|loafer|sandal/.test(clean)) {
+    const isWhite = clean.includes('white');
+    return {
+      detectedItem: isWhite ? 'White Casual Shoes / Sneakers' : 'Running & Casual Shoes',
+      itemType: 'product',
+      primaryConcept: 'shoe',
+      dominantColors: isWhite ? ['white'] : ['black', 'white'],
+      colorDescription: isWhite ? 'Classic All-White' : 'Monochrome Neutral',
       category: 'Footwear & Shoes',
-      keywords: ['white', 'shoe', 'sneaker', 'clog', 'softride', 'running'],
-      tags: ['All', 'Shoes', 'White', 'Sneakers', 'Men']
+      suggestedCategories: ['Footwear & Shoes', 'Fashion', 'Sports & Fitness'],
+      conceptKeywords: ['shoe', 'sneaker', 'footwear', 'clog', 'casual'],
+      colorKeywords: isWhite ? ['white', 'cloud'] : ['black', 'white'],
+      keywords: ['shoe', 'sneaker', 'white', 'casual'],
+      tags: ['All', 'Shoes', 'Sneakers', 'Men', 'Casual']
     };
   }
 
   if (/watch|smartwatch|band/.test(clean)) {
     return {
       detectedItem: 'Smartwatch & Wearable',
+      itemType: 'product',
+      primaryConcept: 'watch',
+      dominantColors: ['black'],
+      colorDescription: 'Obsidian Black',
       category: 'Wearables',
+      suggestedCategories: ['Wearables', 'Electronics', 'Fashion'],
+      conceptKeywords: ['watch', 'smartwatch', 'band', 'fitness'],
+      colorKeywords: ['black', 'dark'],
       keywords: ['watch', 'smartwatch', 'band'],
-      tags: ['All', 'Watches', 'Smart', 'Fitness']
+      tags: ['All', 'Watches', 'Smart', 'Fitness', 'Wearables']
     };
   }
 
   if (/headphone|earphone|earbuds|audio|speaker/.test(clean)) {
     return {
       detectedItem: 'Wireless Audio Headphones',
+      itemType: 'product',
+      primaryConcept: 'headphone',
+      dominantColors: ['black'],
+      colorDescription: 'Matte Black',
       category: 'Audio',
-      keywords: ['headphone', 'wireless', 'audio', 'earbuds'],
-      tags: ['All', 'Audio', 'Wireless', 'Noise Cancelling']
+      suggestedCategories: ['Audio', 'Electronics'],
+      conceptKeywords: ['headphone', 'wireless', 'audio', 'earbuds'],
+      colorKeywords: ['black', 'silver'],
+      keywords: ['headphone', 'wireless', 'audio'],
+      tags: ['All', 'Audio', 'Wireless', 'Noise Cancelling', 'Electronics']
     };
   }
 
   if (/bag|backpack|luggage|tote|purse/.test(clean)) {
     return {
       detectedItem: 'Travel Backpack / Bag',
+      itemType: 'product',
+      primaryConcept: 'bag',
+      dominantColors: ['black', 'grey'],
+      colorDescription: 'Charcoal & Black',
       category: 'Bags & Luggage',
-      keywords: ['bag', 'backpack', 'luggage'],
-      tags: ['All', 'Bags', 'Travel', 'Daily']
+      suggestedCategories: ['Bags & Luggage', 'Fashion'],
+      conceptKeywords: ['bag', 'backpack', 'luggage', 'tote'],
+      colorKeywords: ['black', 'grey', 'charcoal'],
+      keywords: ['bag', 'backpack', 'travel'],
+      tags: ['All', 'Bags', 'Travel', 'Backpacks', 'Daily']
     };
   }
 
-  if (/shirt|tshirt|hoodie|pant|jean|dress|jacket|coat|apparel/.test(clean)) {
+  if (/shirt|tshirt|tee|hoodie|pant|jean|dress|jacket|coat|apparel/.test(clean)) {
     return {
       detectedItem: 'Fashion Apparel Wear',
+      itemType: 'apparel',
+      primaryConcept: 'shirt',
+      dominantColors: ['black', 'white'],
+      colorDescription: 'Neutral Monochrome',
       category: 'Fashion & Apparel',
-      keywords: ['shirt', 'apparel', 'casual', 'jacket'],
-      tags: ['All', 'Apparel', 'Casual', 'Fashion']
+      suggestedCategories: ['Fashion & Apparel', 'Fashion'],
+      conceptKeywords: ['shirt', 'apparel', 'casual', 'jacket', 'tee', 'hoodie'],
+      colorKeywords: ['black', 'white', 'grey'],
+      keywords: ['shirt', 'apparel', 'casual', 'fashion'],
+      tags: ['All', 'Apparel', 'Casual', 'Fashion', 'Men']
     };
   }
 
-  // Default: check if "white" in tag
-  if (clean.includes('white')) {
-    return {
-      detectedItem: 'White Shoes & Footwear',
-      category: 'Footwear & Shoes',
-      keywords: ['white', 'shoe', 'sneaker', 'casual'],
-      tags: ['All', 'Shoes', 'White', 'Casual']
-    };
-  }
-
+  // Default neutral lifestyle detection
   return {
     detectedItem: 'Fashion & Lifestyle Item',
-    category: 'Footwear & Shoes',
-    keywords: ['shoe', 'casual', 'sneaker'],
-    tags: ['All', 'Shoes', 'Men', 'Sports', 'Casual']
+    itemType: 'product',
+    primaryConcept: 'fashion',
+    dominantColors: ['black', 'white'],
+    colorDescription: 'Monochrome Palette',
+    category: 'Fashion',
+    suggestedCategories: ['Fashion', 'Fashion & Apparel', 'Footwear & Shoes'],
+    conceptKeywords: ['fashion', 'casual', 'style', 'streetwear', 'apparel'],
+    colorKeywords: ['black', 'white', 'monochrome'],
+    keywords: ['fashion', 'casual', 'streetwear'],
+    tags: ['All', 'Fashion', 'Apparel', 'Casual', 'Trending']
   };
 }
 
 exports.searchByImage = async (req, res) => {
   try {
-    const { image, detectedTag, category = 'all' } = req.body;
+    const { image, detectedTag, category = 'all', aiContext: cachedAiContext } = req.body;
 
-    // 1. Try Gemini Vision AI analysis first
-    let aiContext = await analyzeImageWithAI(image, detectedTag);
+    // 1. Obtain AI context: use cached if provided (e.g. from filter clicks), otherwise run Vision AI
+    let aiContext = cachedAiContext;
 
-    // 2. If AI didn't return or was unavailable, use intelligent heuristic extraction
-    if (!aiContext || !aiContext.category) {
-      aiContext = extractHeuristicContext(detectedTag);
+    if (!aiContext || !aiContext.detectedItem) {
+      if (image) {
+        aiContext = await analyzeImageWithAI(image, detectedTag);
+      }
+      if (!aiContext || !aiContext.detectedItem) {
+        aiContext = extractHeuristicContext(detectedTag);
+      }
     }
 
-    const targetCategory = category !== 'all' ? category : aiContext.category;
-    const keywords = aiContext.keywords || ['shoe', 'white'];
     const detectedTitle = aiContext.detectedItem || 'Similar Products';
+    const primaryConcept = String(aiContext.primaryConcept || '').trim().toLowerCase();
+    const dominantColors = Array.isArray(aiContext.dominantColors) ? aiContext.dominantColors : ['black', 'white'];
+    const colorDescription = aiContext.colorDescription || 'Monochrome Palette';
 
-    // 3. Category domain mapping (Strict domain constraint so shoes never match groceries or electronics)
-    let allowableCategories = [targetCategory];
-    const catLower = (targetCategory || '').toLowerCase();
-    if (catLower.includes('footwear') || catLower.includes('shoe') || catLower.includes('sneaker') || catLower.includes('clog')) {
-      allowableCategories = [/footwear/i, /shoes/i, /fashion/i];
-    } else if (catLower.includes('fashion') || catLower.includes('apparel') || catLower.includes('clothing')) {
-      allowableCategories = [/fashion/i, /apparel/i, /footwear/i, /shoes/i];
-    } else if (catLower.includes('audio') || catLower.includes('headphone')) {
-      allowableCategories = [/audio/i, /sound/i, /electronics/i];
-    } else if (catLower.includes('wearable') || catLower.includes('watch')) {
-      allowableCategories = [/wearable/i, /watch/i, /electronics/i];
-    } else if (catLower.includes('grocer') || catLower.includes('food') || catLower.includes('beverage')) {
-      allowableCategories = [/grocer/i, /food/i, /beverage/i];
-    } else {
-      allowableCategories = [new RegExp(targetCategory.replace('&', '\\&'), 'i')];
-    }
+    const conceptKeywords = (Array.isArray(aiContext.conceptKeywords) && aiContext.conceptKeywords.length > 0)
+      ? aiContext.conceptKeywords
+      : (aiContext.keywords || ['fashion', 'casual']);
 
-    const regexPattern = keywords.map(k => `(${k})`).join('|');
-    const nameRegex = new RegExp(regexPattern, 'i');
+    const colorKeywords = (Array.isArray(aiContext.colorKeywords) && aiContext.colorKeywords.length > 0)
+      ? aiContext.colorKeywords
+      : dominantColors;
+
+    const suggestedCats = (Array.isArray(aiContext.suggestedCategories) ? aiContext.suggestedCategories : [aiContext.category || 'Fashion'])
+      .map(c => String(c).toLowerCase());
+
+    // 2. Build MongoDB query using word boundaries so "expandable" does not match "panda"
+    const searchTokens = [...new Set([...conceptKeywords, ...colorKeywords])].filter(k => k && k.length > 1);
+    const regexTokens = searchTokens.map(k => new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
 
     const query = {
-      isDeleted: { $ne: true },
-      category: { $in: allowableCategories }
+      isDeleted: { $ne: true }
     };
 
-    if (category !== 'all') {
+    // If a specific filter tag was selected by user
+    if (category && category !== 'all' && category !== 'All') {
+      const catRegex = new RegExp(`\\b${category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
       query.$or = [
-        { name: new RegExp(category, 'i') },
-        { tags: new RegExp(category, 'i') }
+        { category: catRegex },
+        { tags: catRegex },
+        { name: catRegex }
       ];
     } else {
+      // General visual search query across name, tags, and description
       query.$or = [
-        { name: nameRegex },
-        { description: nameRegex },
-        { tags: { $in: keywords.map(k => new RegExp(`^${k}$`, 'i')) } }
+        { name: { $in: regexTokens } },
+        { tags: { $in: regexTokens } },
+        { description: { $in: regexTokens } }
       ];
     }
 
     let items = await Product.find(query)
-      .limit(24)
+      .select('name category description tags price originalPrice discountPercentage rating ratingCount image images color colors')
+      .limit(100)
       .lean();
 
-    // Fallback within allowable category only (never leak groceries)
+    // Fallback if zero items matched the strict regex
     if (items.length === 0) {
       items = await Product.find({
         isDeleted: { $ne: true },
-        category: { $in: allowableCategories }
+        $or: [
+          { category: { $in: suggestedCats.map(c => new RegExp(c, 'i')) } },
+          { tags: { $in: searchTokens.map(t => new RegExp(t, 'i')) } }
+        ]
       })
-        .limit(12)
+        .select('name category description tags price originalPrice discountPercentage rating ratingCount image images color colors')
+        .limit(40)
         .lean();
     }
 
-    // Attach similarity score based on keywords match
-    const isWhiteSearch = keywords.some(k => k.toLowerCase() === 'white') || (detectedTitle.toLowerCase().includes('white'));
+    // 3. Dual-Pillar Scoring Formula: 60-70% Concept & Theme + 30-40% Color Palette
+    const scoredItems = [];
+    const seenNames = new Set();
 
-    const scoredItems = items.map((p) => {
-      const pNameLower = (p.name || '').toLowerCase();
-      const pDescLower = (p.description || '').toLowerCase();
-      const pTags = Array.isArray(p.tags) ? p.tags.map(t => String(t).toLowerCase()) : [];
+    for (const p of items) {
+      // Normalize base name to deduplicate variants (e.g. "(Batch 2)", "(Edition 3)")
+      const cleanName = (p.name || '')
+        .replace(/\(Batch \d+\)/g, '')
+        .replace(/\(Edition \d+\)/g, '')
+        .replace(/\(v\d+\)/g, '')
+        .replace(/\(Series \d+\)/g, '')
+        .trim();
 
-      let score = 82;
-      let hitCount = 0;
+      if (seenNames.has(cleanName)) continue;
 
-      keywords.forEach(kw => {
-        const kwLower = kw.toLowerCase();
-        if (pNameLower.includes(kwLower)) {
-          hitCount += 2;
-          score += 3;
-        }
-        if (pTags.includes(kwLower)) {
-          hitCount += 1;
-          score += 2;
-        }
+      const text = `${p.name || ''} ${p.description || ''} ${(p.tags || []).join(' ')} ${p.color || ''}`.toLowerCase();
+      const nameLower = (p.name || '').toLowerCase();
+      const catLower = (p.category || '').toLowerCase();
+
+      let conceptHits = 0;
+      let colorHits = 0;
+
+      // Word boundary test for primary concept (e.g. \bpanda\b)
+      const isPrimaryConceptMatch = primaryConcept && (
+        new RegExp(`\\b${primaryConcept}\\b`, 'i').test(nameLower) ||
+        new RegExp(`\\b${primaryConcept}\\b`, 'i').test(text)
+      );
+
+      conceptKeywords.forEach(k => {
+        const reg = new RegExp(`\\b${k.toLowerCase()}\\b`, 'i');
+        if (reg.test(nameLower)) conceptHits += 2.5;
+        else if (reg.test(text)) conceptHits += 1.0;
       });
 
-      // Special bonus if searching for white shoes and item is actually white footwear
-      if (isWhiteSearch && pNameLower.includes('white') && (pNameLower.includes('shoe') || pNameLower.includes('clog') || pNameLower.includes('sneaker'))) {
-        score = Math.max(score, 94) + 4;
+      colorKeywords.forEach(c => {
+        const reg = new RegExp(`\\b${c.toLowerCase()}\\b`, 'i');
+        if (reg.test(nameLower)) colorHits += 2.0;
+        else if (reg.test(text)) colorHits += 1.0;
+      });
+
+      // Filter out products with 0 concept and 0 color matches
+      if (conceptHits === 0 && colorHits === 0 && !isPrimaryConceptMatch) continue;
+
+      let conceptScore = Math.min(100, (conceptHits / 3.0) * 100);
+      if (isPrimaryConceptMatch) conceptScore = Math.max(conceptScore, 95);
+
+      let colorScore = Math.min(100, (colorHits / 2.0) * 100);
+
+      // Weighting: 65% Concept + 35% Color
+      let rawScore = (conceptScore * 0.65) + (colorScore * 0.35);
+
+      // Check if item is in suggested categories
+      const isPreferredCat = suggestedCats.some(sc => catLower.includes(sc) || sc.includes(catLower));
+
+      let matchLabel = 'Color Palette';
+
+      if (isPrimaryConceptMatch) {
+        // Direct subject match (e.g. Nike Dunk Panda) -> 92% - 96%
+        rawScore = 92 + Math.min(4, colorHits * 2);
+        matchLabel = primaryConcept ? `Direct ${primaryConcept.charAt(0).toUpperCase() + primaryConcept.slice(1)} Match` : 'Direct Match';
+      } else if (conceptHits > 0 && colorHits > 0) {
+        // Both concept & color matched -> 70% - 85%
+        rawScore = isPreferredCat ? Math.min(85, Math.max(70, rawScore + 6)) : Math.min(76, Math.max(65, rawScore));
+        matchLabel = 'Concept & Color';
+      } else if (conceptHits > 0 && colorHits === 0) {
+        // Concept/motif matched without explicit color -> 62% - 75%
+        rawScore = isPreferredCat ? Math.min(76, Math.max(64, rawScore + 4)) : Math.min(68, Math.max(60, rawScore));
+        matchLabel = 'Theme Match';
+      } else if (conceptHits === 0 && colorHits > 0) {
+        // Color-only matched (matching black & white palette) -> 60% - 70%
+        rawScore = isPreferredCat ? (64 + Math.min(6, colorHits * 2)) : (60 + Math.min(5, colorHits * 1.5));
+        matchLabel = 'Color Palette';
       }
 
-      score = Math.min(Math.max(score, 80), 98);
+      const finalScore = Math.round(rawScore);
+      seenNames.add(cleanName);
 
-      return {
+      scoredItems.push({
         _id: p._id,
-        name: p.name,
+        name: cleanName,
         category: p.category,
         price: p.price,
         originalPrice: p.originalPrice || Math.round(p.price * 1.25),
@@ -240,23 +370,34 @@ exports.searchByImage = async (req, res) => {
         rating: p.rating || 4.5,
         ratingCount: p.ratingCount || 420,
         image: p.image || (p.images && p.images[0]) || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800',
-        similarity: `${score}% Match`,
-        _score: score
-      };
-    });
+        similarity: `${finalScore}% Match`,
+        _score: finalScore,
+        matchLabel,
+        isPreferredCat
+      });
+    }
 
-    // Sort by calculated similarity descending
-    scoredItems.sort((a, b) => b._score - a._score);
+    // Sort by calculated similarity descending; preferred categories break ties
+    scoredItems.sort((a, b) => {
+      if (b._score !== a._score) return b._score - a._score;
+      if (b.isPreferredCat && !a.isPreferredCat) return 1;
+      if (!b.isPreferredCat && a.isPreferredCat) return -1;
+      return 0;
+    });
 
     res.json({
       success: true,
       detectedItem: detectedTitle,
-      tags: aiContext.tags || ['All', 'Shoes', 'White', 'Sneakers', 'Men'],
+      dominantColors: dominantColors,
+      colorDescription: colorDescription,
+      itemType: aiContext.itemType || 'product',
+      tags: aiContext.tags || ['All', 'Shoes', 'Apparel', 'Trending'],
+      aiContext: aiContext,
       products: scoredItems.slice(0, 16),
       total: scoredItems.length
     });
   } catch (err) {
-    console.error('searchByImage error:', err);
+    console.error('[VisualSearch] searchByImage error:', err);
     res.status(500).json({ msg: err.message || 'Visual search failed' });
   }
 };

@@ -28,6 +28,26 @@ router.post('/compare-ai', async (req, res) => {
   }
 });
 
+const { getAllOccasions, getOccasionCollection } = require('../services/occasion.service');
+const { generateProductConfidence } = require('../services/product-confidence.service');
+const Product = require('../models/product.model');
+
+// Occasions Catalog & Complete Collections
+router.get('/occasions', getAllOccasions);
+router.get('/occasions/:slug', getOccasionCollection);
+
+// Product Confidence & Decision Assistant Endpoint
+router.get('/confidence/:id', async (req, res) => {
+  try {
+    const product = await Product.findOne({ _id: req.params.id, isDeleted: { $ne: true } }).lean();
+    if (!product) return res.status(404).json({ msg: 'Product not found' });
+    const insights = generateProductConfidence(product, []);
+    res.json({ success: true, confidenceInsights: insights });
+  } catch (err) {
+    res.status(500).json({ msg: err.message || 'Failed to generate confidence insights' });
+  }
+});
+
 router.get('/public', async (req, res) => {
   try {
     await getAllProducts(req, res);

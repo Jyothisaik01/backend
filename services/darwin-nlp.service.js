@@ -247,6 +247,71 @@ async function processNlpQuery({
     return result;
   }
 
+  // 5.5 VIRTUAL TRY-ON / ANYWEAR LIVE FITTING ROOM
+  const tryOnMatch = lower.match(/(?:try\s+(?:this|it|on|clothes|outfit)|virtual\s*try\s*on|live\s*try\s*on|camera\s*try\s*on|show\s+(?:me\s+)?(?:this|it|item)\s+on\s+(?:me|avatar)|how\s+does\s+this\s+look\s+on\s+me|fitting\s+room|put\s+(?:this\s+)?on\s+(?:my\s+)?avatar)/i);
+  if (tryOnMatch) {
+    let targetProductId = currentProductContext?.productId || currentProductContext?._id;
+    let targetProduct = null;
+
+    // Check if a specific named clothing product was mentioned, e.g. "try on the black hoodie"
+    const specificItemMatch = lower.match(/(?:try\s+on|show\s+(?:me\s+)?|fitting\s+room\s+for)\s+(?:the\s+)?([^,.?!]+?)(?:\s+on\s+(?:me|avatar)|\s*$)/i);
+    const candidateQuery = specificItemMatch ? specificItemMatch[1].trim() : null;
+
+    if (candidateQuery && !['this', 'it', 'clothes', 'outfit', 'product'].includes(candidateQuery.toLowerCase())) {
+      const searchRes = await darwinTools.searchProducts({ query: candidateQuery, limit: 1 });
+      if (searchRes && searchRes.length > 0) {
+        targetProduct = searchRes[0];
+        targetProductId = searchRes[0]._id;
+      }
+    }
+
+    if (!targetProduct && targetProductId) {
+      targetProduct = await darwinTools.getProductDetails({ productId: targetProductId });
+    }
+
+    // Fallback: check conversation history for recent clothing product
+    if (!targetProduct && Array.isArray(conversationHistory)) {
+      for (let i = conversationHistory.length - 1; i >= 0; i--) {
+        const prev = conversationHistory[i];
+        const prods = prev.structuredData?.products || prev.products || [];
+        if (prods.length > 0) {
+          targetProduct = prods[0];
+          targetProductId = prods[0]._id || prods[0].productId;
+          break;
+        }
+      }
+    }
+
+    // Default fallback: get a popular fashion item
+    if (!targetProduct) {
+      const fashionItems = await darwinTools.searchProducts({ category: 'Fashion', limit: 1 });
+      if (fashionItems && fashionItems.length > 0) {
+        targetProduct = fashionItems[0];
+        targetProductId = fashionItems[0]._id;
+      }
+    }
+
+    if (targetProduct) {
+      const isAvatarRequested = /avatar|3d/i.test(lower);
+      const mode = isAvatarRequested ? 'avatar' : 'camera';
+
+      result.message = `👗 Launching the **Virtual Fitting Room** for **${targetProduct.name}** in **${mode === 'avatar' ? '3D Avatar Studio' : 'Live Camera (Anywear AR)'}** mode! Check real-time drape, fit, and movement.`;
+      result.product = targetProduct;
+      result.products = [targetProduct];
+      result.action = {
+        type: 'open_virtual_tryon',
+        mode,
+        product: targetProduct
+      };
+      result.suggestions = [
+        mode === 'camera' ? 'Switch to 3D Avatar' : 'Try Live Camera',
+        'Add to Cart',
+        'Save Look'
+      ];
+      return result;
+    }
+  }
+
   // 6. ADD TO CART
   const addToCartMatch = lower.match(/(?:add|put)\s+(.+?)\s+(?:in|into|to)\s+(?:my\s+)?cart/i) ||
                          lower.match(/(?:add\s+(?:this|it|item)?\s*to\s*(?:my\s*)?cart|buy\s+this\s+now|add\s+to\s+cart)/i);

@@ -63,13 +63,14 @@ exports.login = async ({ email, password }) => {
       name: customer.name || '',
       email: customer.email || '',
       phone: customer.phone || '',
-      avatar: customer.avatar || ''
+      avatar: customer.avatar || '',
+      preferences: customer.preferences || { theme: 'light' }
     }
   };
 };
 
 exports.getMe = async (req, res) => {
-  const customer = await Customer.findOne({ _id: req.customerId, isDeleted: { $ne: true } }).select('name email phone gender dateOfBirth avatar createdAt');
+  const customer = await Customer.findOne({ _id: req.customerId, isDeleted: { $ne: true } }).select('name email phone gender dateOfBirth avatar createdAt preferences');
   if (!customer) return res.status(404).json({ msg: 'Customer not found' });
   res.json(customer);
 };
@@ -105,6 +106,10 @@ exports.updateMe = async (req, res) => {
   if (avatar !== undefined) {
     customer.avatar = avatar || '';
   }
+  if (req.body.preferences && req.body.preferences.theme) {
+    if (!customer.preferences) customer.preferences = {};
+    customer.preferences.theme = ['light', 'dark'].includes(req.body.preferences.theme) ? req.body.preferences.theme : 'light';
+  }
 
   await customer.save();
 
@@ -116,6 +121,7 @@ exports.updateMe = async (req, res) => {
     gender: customer.gender,
     dateOfBirth: customer.dateOfBirth,
     avatar: customer.avatar || '',
+    preferences: customer.preferences || { theme: 'light' },
     createdAt: customer.createdAt
   });
 };
@@ -271,3 +277,151 @@ exports.deletePaymentMethod = async (req, res) => {
   await PaymentMethod.deleteOne({ _id: req.params.id });
   res.json({ msg: 'Payment method removed successfully' });
 };
+
+// -------------------------------------------------------------
+// Customer Shopping Profile & Darwin Shopping Memory Handlers
+// -------------------------------------------------------------
+
+const DEFAULT_SHOPPING_PROFILE = {
+  budget: { min: 0, max: 10000, tier: 'any' },
+  brands: ['Nike', 'Apple', 'Adidas', 'Puma'],
+  sizes: { clothing: 'M', footwear: 'UK 8', bottoms: '32' },
+  categories: ['Fashion', 'Footwear & Shoes', 'Electronics'],
+  styles: ['Athletic / Gym', 'Casual Everyday', 'Formal / Office'],
+  occasions: ['Office', 'Gym', 'College']
+};
+
+exports.getShoppingProfile = async (req, res) => {
+  const customer = await Customer.findById(req.customerId).select('shoppingProfile darwinMemory name').lean();
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  const profile = customer.shoppingProfile || DEFAULT_SHOPPING_PROFILE;
+  const memory = customer.darwinMemory || {
+    enabled: true,
+    memories: [
+      { key: 'preferred_shoe_size', value: 'Footwear UK 8', confidence: 1.0, source: 'user_stated', updatedAt: new Date() },
+      { key: 'budget_sweetspot', value: 'Comfortable with items under ₹10,000', confidence: 0.92, source: 'orders', updatedAt: new Date() },
+      { key: 'lifestyle', value: 'Active workout & workplace professional', confidence: 0.88, source: 'browsing', updatedAt: new Date() }
+    ]
+  };
+
+  res.json({
+    success: true,
+    shoppingProfile: profile,
+    darwinMemory: memory
+  });
+};
+
+exports.updateShoppingProfile = async (req, res) => {
+  const customer = await Customer.findById(req.customerId);
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  const { budget, brands, sizes, categories, styles, occasions } = req.body || {};
+
+  customer.shoppingProfile = {
+    budget: budget || customer.shoppingProfile?.budget || DEFAULT_SHOPPING_PROFILE.budget,
+    brands: Array.isArray(brands) ? brands : (customer.shoppingProfile?.brands || DEFAULT_SHOPPING_PROFILE.brands),
+    sizes: sizes || customer.shoppingProfile?.sizes || DEFAULT_SHOPPING_PROFILE.sizes,
+    categories: Array.isArray(categories) ? categories : (customer.shoppingProfile?.categories || DEFAULT_SHOPPING_PROFILE.categories),
+    styles: Array.isArray(styles) ? styles : (customer.shoppingProfile?.styles || DEFAULT_SHOPPING_PROFILE.styles),
+    occasions: Array.isArray(occasions) ? occasions : (customer.shoppingProfile?.occasions || DEFAULT_SHOPPING_PROFILE.occasions)
+  };
+
+  // If Darwin memory is active, record stated preferences
+  if (customer.darwinMemory?.enabled !== false) {
+    if (!customer.darwinMemory) customer.darwinMemory = { enabled: true, memories: [] };
+    if (!Array.isArray(customer.darwinMemory.memories)) customer.darwinMemory.memories = [];
+
+    if (sizes?.footwear) {
+      const idx = customer.darwinMemory.memories.findIndex(m => m.key === 'preferred_shoe_size');
+      const mem = { key: 'preferred_shoe_size', value: `Footwear ${sizes.footwear}`, confidence: 1.0, source: 'user_stated', updatedAt: new Date() };
+      if (idx >= 0) customer.darwinMemory.memories[idx] = mem;
+      else customer.darwinMemory.memories.push(mem);
+    }
+    if (sizes?.clothing) {
+      const idx = customer.darwinMemory.memories.findIndex(m => m.key === 'preferred_clothing_size');
+      const mem = { key: 'preferred_clothing_size', value: `Clothing Size ${sizes.clothing}`, confidence: 1.0, source: 'user_stated', updatedAt: new Date() };
+      if (idx >= 0) customer.darwinMemory.memories[idx] = mem;
+      else customer.darwinMemory.memories.push(mem);
+    }
+    if (budget?.max) {
+      const idx = customer.darwinMemory.memories.findIndex(m => m.key === 'budget_target');
+      const mem = { key: 'budget_target', value: `Budget Target Under ₹${Number(budget.max).toLocaleString('en-IN')}`, confidence: 1.0, source: 'user_stated', updatedAt: new Date() };
+      if (idx >= 0) customer.darwinMemory.memories[idx] = mem;
+      else customer.darwinMemory.memories.push(mem);
+    }
+  }
+
+  await customer.save();
+
+  res.json({
+    success: true,
+    msg: 'Shopping profile and preferences updated successfully',
+    shoppingProfile: customer.shoppingProfile,
+    darwinMemory: customer.darwinMemory
+  });
+};
+
+exports.getDarwinMemory = async (req, res) => {
+  const customer = await Customer.findById(req.customerId).select('darwinMemory').lean();
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  res.json({
+    success: true,
+    enabled: customer.darwinMemory?.enabled !== false,
+    memories: customer.darwinMemory?.memories || []
+  });
+};
+
+exports.toggleDarwinMemory = async (req, res) => {
+  const customer = await Customer.findById(req.customerId);
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  if (!customer.darwinMemory) {
+    customer.darwinMemory = { enabled: true, memories: [] };
+  }
+
+  const newState = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : !customer.darwinMemory.enabled;
+  customer.darwinMemory.enabled = newState;
+  await customer.save();
+
+  res.json({
+    success: true,
+    enabled: customer.darwinMemory.enabled,
+    msg: `Darwin shopping memory is now ${customer.darwinMemory.enabled ? 'Enabled' : 'Paused'}`
+  });
+};
+
+exports.deleteDarwinMemory = async (req, res) => {
+  const customer = await Customer.findById(req.customerId);
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  const targetKey = decodeURIComponent(req.params.key);
+  if (customer.darwinMemory?.memories) {
+    customer.darwinMemory.memories = customer.darwinMemory.memories.filter(m => m.key !== targetKey);
+    await customer.save();
+  }
+
+  res.json({
+    success: true,
+    msg: 'Memory item deleted',
+    memories: customer.darwinMemory?.memories || []
+  });
+};
+
+exports.clearDarwinMemory = async (req, res) => {
+  const customer = await Customer.findById(req.customerId);
+  if (!customer) return res.status(404).json({ msg: 'Customer not found' });
+
+  if (customer.darwinMemory) {
+    customer.darwinMemory.memories = [];
+    await customer.save();
+  }
+
+  res.json({
+    success: true,
+    msg: 'All Darwin shopping memories cleared',
+    memories: []
+  });
+};
+

@@ -238,6 +238,9 @@ exports.getProducts = async (req, res) => {
         warranty: { $ifNull: ['$warranty', '1 Year Manufacturer Warranty'] },
         rating: { $ifNull: ['$rating', 4.5] },
         ratingCount: { $ifNull: ['$ratingCount', 1] },
+        virtualTryOn: 1,
+        clothingType: 1,
+        gender: 1,
         createdAt: 1,
         updatedAt: 1
       }
@@ -390,6 +393,24 @@ exports.getAllProducts = async (req, res) => {
     andConditions.push({ rating: { $gte: minRating } });
   }
 
+  // Occasion filter (Office, Wedding, Travel, Gym, College, Party)
+  const occasion = (req.query.occasion || '').toString().trim().toLowerCase();
+  if (occasion && occasion !== 'all') {
+    const { OCCASIONS_METADATA } = require('./occasion.service');
+    const occ = OCCASIONS_METADATA.find(o => o.id === occasion || o.slug === occasion);
+    if (occ) {
+      andConditions.push({
+        $or: [
+          { occasions: occ.id },
+          { category: { $in: occ.categories } },
+          { name: { $regex: occ.tags.join('|'), $options: 'i' } }
+        ]
+      });
+    } else {
+      andConditions.push({ occasions: occasion });
+    }
+  }
+
   const matchStage = andConditions.length > 0 ? { $match: { $and: andConditions } } : null;
 
   // Sorting options
@@ -452,6 +473,9 @@ exports.getAllProducts = async (req, res) => {
         rating: 1,
         ratingCount: 1,
         salesCount: 1,
+        virtualTryOn: 1,
+        clothingType: 1,
+        gender: 1,
         createdAt: 1
       }
     },
@@ -538,7 +562,15 @@ exports.getProductById = async (req, res) => {
     return res.status(404).json({ msg: 'Product not found' });
   }
 
-  res.json(results[0]);
+  const productData = results[0];
+  try {
+    const { generateProductConfidence } = require('./product-confidence.service');
+    productData.confidenceInsights = generateProductConfidence(productData, productData.reviews || []);
+  } catch (confErr) {
+    console.warn('[ProductConfidence] Failed to generate insights:', confErr.message);
+  }
+
+  res.json(productData);
 };
 
 exports.getProductSearchMeta = async (req, res) => {
