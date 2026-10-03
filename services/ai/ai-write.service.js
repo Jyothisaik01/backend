@@ -131,6 +131,20 @@ function generateHeuristicText(task, input, context) {
     };
   }
 
+  if (task === 'ticket_reply' || task === 'customer_reply') {
+    const subj = context?.subject || 'this ticket';
+    return {
+      message: raw ? `${raw}. Please let me know the next steps.` : `Thank you for the update regarding ${subj}. Could you please confirm the current status and expected resolution time?`
+    };
+  }
+
+  if (task === 'return_request') {
+    const reason = context?.reason || 'product issue';
+    return {
+      message: raw ? `${raw}. Requesting return pickup and refund.` : `The delivered item has an issue (${reason}). I would appreciate if you could schedule reverse pickup and process my refund promptly.`
+    };
+  }
+
   if (task === 'resolution_summary') {
     return {
       message: raw ? `Resolution confirmed: ${raw}` : `Inquiry verified and successfully resolved with customer satisfaction.`
@@ -209,6 +223,21 @@ ${history ? `Previous Context: "${history}"` : ''}
 Staff's notes / points to convey: "${rawNotes || `We have addressed and resolved your issue regarding ${subj}.`}".
 Write an empathetic, reassuring, professional support reply (2 to 3 concise sentences).
 Output ONLY the reply message text.`;
+  } else if (task === 'ticket_reply' || task === 'customer_reply') {
+    const subj = context?.subject || prodName || 'my inquiry';
+    const history = context?.history || '';
+    user = `You are a customer responding to support regarding "${subj}".
+${history ? `Recent conversation context: ${history}` : ''}
+Customer's notes: "${rawNotes || 'Following up on the status and next steps.'}".
+Write a polite, concise, and clear customer response to the support specialist (1 to 2 sentences).
+Output ONLY the response text.`;
+  } else if (task === 'return_request') {
+    user = `You are a customer submitting a return/refund request for "${prodName}".
+Return Reason Category: "${context?.reason || 'Defective/Damaged item'}".
+${orderId ? `Order Reference: "${orderId}".` : ''}
+Customer's brief symptom/issue note: "${rawNotes || 'Item has an issue and I want to return it'}".
+Write a clear, concise, and polite explanation for the quality inspection team explaining what happened (1 to 2 sentences).
+Output ONLY the explanation text.`;
   } else if (task === 'vendor_ticket') {
     const topic = context?.subject || rawNotes || 'Merchant Support';
     const cat = context?.category || 'Payments & Payouts';

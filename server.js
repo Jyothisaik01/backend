@@ -46,13 +46,13 @@ app.disable('etag');
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin) {
+      if (!origin || origin === 'null' || origin === 'about:blank' || origin.startsWith('file://')) {
         return callback(null, true);
       }
 
       try {
         const hostname = new URL(origin).hostname;
-        const isLocalhost = /^(localhost|127\.0\.0\.1)$/.test(hostname);
+        const isLocalhost = /^(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)$/.test(hostname);
         const isVercel = /\.vercel\.app$/.test(hostname);
         const isNetlify = /\.netlify\.app$/.test(hostname);
         const isRender = /\.onrender\.com$/.test(hostname);
@@ -72,7 +72,7 @@ app.use(
         }
       }
 
-      return callback(new Error('Not allowed by CORS: ' + origin));
+      return callback(null, true);
     },
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
@@ -119,6 +119,8 @@ app.use('/', require('./routes/product-qa.routes'));
 app.use('/api', require('./routes/product-qa.routes'));
 app.use('/recommendations', require('./routes/recommendation.routes'));
 app.use('/rewards', require('./routes/rewards.routes'));
+app.use('/voice', require('./routes/voice.routes'));
+app.use('/api/voice', require('./routes/voice.routes'));
 
 // Static assets (banners, icons, public assets)
 const publicAssetsPath = path.join(__dirname, '..', 'inventory-react-app', 'public');

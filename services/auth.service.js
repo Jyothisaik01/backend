@@ -77,12 +77,32 @@ exports.sendOtp = async ({ email, userType = 'customer', purpose = 'login' }) =>
   let targetUser = null;
   if (userType === 'vendor') {
     targetUser = await User.findOne({ email: cleanEmail, isDeleted: { $ne: true } });
+    if (!targetUser) {
+      // Check customer
+      targetUser = await Customer.findOne({ email: cleanEmail, isDeleted: { $ne: true } });
+      if (targetUser) userType = 'customer';
+    }
   } else {
     targetUser = await Customer.findOne({ email: cleanEmail, isDeleted: { $ne: true } });
+    if (!targetUser) {
+      // Check vendor
+      targetUser = await User.findOne({ email: cleanEmail, isDeleted: { $ne: true } });
+      if (targetUser) {
+        userType = 'vendor';
+      } else {
+        // Auto-create customer account for seamless OTP login
+        targetUser = await Customer.create({
+          name: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          isBlocked: false,
+          wallet: { balance: 0 }
+        });
+      }
+    }
   }
 
   if (!targetUser) {
-    throw new Error(`No ${userType} account found with email ${cleanEmail}`);
+    throw new Error(`No account found with email ${cleanEmail}`);
   }
 
   // Generate 6-digit OTP
@@ -99,7 +119,7 @@ exports.sendOtp = async ({ email, userType = 'customer', purpose = 'login' }) =>
   try {
     await emailService.sendOtpEmail({
       email: cleanEmail,
-      name: targetUser.name,
+      name: targetUser.name || 'Valued User',
       otp: otpCode,
       purpose: purpose.charAt(0).toUpperCase() + purpose.slice(1)
     });
@@ -107,7 +127,7 @@ exports.sendOtp = async ({ email, userType = 'customer', purpose = 'login' }) =>
     console.error('[AuthService] Email delivery notice:', emailErr.message);
   }
 
-  return { success: true, message: `OTP sent successfully to ${cleanEmail}` };
+  return { success: true, message: `OTP sent successfully to ${cleanEmail}`, userType };
 };
 
 exports.verifyOtpLogin = async ({ email, otp, userType = 'customer' }) => {
@@ -115,14 +135,29 @@ exports.verifyOtpLogin = async ({ email, otp, userType = 'customer' }) => {
   const cleanEmail = email.trim().toLowerCase();
   const cleanOtp = String(otp).trim();
 
-  const AccountModel = userType === 'vendor' ? User : Customer;
-  const record = await AccountModel.findOne({
+  let AccountModel = userType === 'vendor' ? User : Customer;
+  let record = await AccountModel.findOne({
     email: cleanEmail,
     isDeleted: { $ne: true },
     'otp.code': cleanOtp,
     'otp.purpose': 'login',
     'otp.expiresAt': { $gt: new Date() }
   });
+
+  if (!record) {
+    const OtherModel = userType === 'vendor' ? Customer : User;
+    record = await OtherModel.findOne({
+      email: cleanEmail,
+      isDeleted: { $ne: true },
+      'otp.code': cleanOtp,
+      'otp.purpose': 'login',
+      'otp.expiresAt': { $gt: new Date() }
+    });
+    if (record) {
+      AccountModel = OtherModel;
+      userType = userType === 'vendor' ? 'customer' : 'vendor';
+    }
+  }
 
   if (!record) {
     throw new Error('Invalid or expired OTP code');
